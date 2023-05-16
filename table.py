@@ -6,16 +6,20 @@ import csv
 
 class WavefromGenerator:
     def __init__(self):
-        st.session_state.current_waveform = None
+        if 'current_waveform' not in st.session_state:
+            st.session_state.current_waveform = None
+        if 'wave_form_saved' not in st.session_state:
+            st.session_state.wave_form_saved = None
         self.render_page()
 
     
     def render_page(self):
         st.title('Waveform Generator')
         st.write('This `Waveform Generator` allows you to specify a number of waves and then adds them together.')
+
         df = pd.DataFrame()
         wavetype = pd.DataFrame(
-            {"command": ["Sine", "Square", "Triangle", "Sawtooth"]}
+            {"command": ["Sine", "Cosine", "Square", "Triangle", "Sawtooth"]}
         )
         df["Frequency"] = [3.0, 2.0, 3.0]
         df["Amplitude"] = [1.0, 1.0, 1.0]
@@ -25,22 +29,40 @@ class WavefromGenerator:
             wavetype["command"].astype("category")
         )
 
-        edited_df = st.experimental_data_editor(df, key="my_df", num_rows='dynamic')
-
-        self.sample_rate = st.slider('Sample Rate', 1, 100, 40, 1)
-        silence_duration = st.slider('Gap Duration(sets wave to zero)', 0.0, 2.0, 1.0, 0.05)
-
-        if st.button('Generate'):
-            frequencies = edited_df['Frequency'].values
-            amplitudes = edited_df['Amplitude'].values
-            offsets = edited_df['Offset'].values
-            durations = edited_df['Duration'].values
-            wave_types = edited_df['Wavetype'].values
-            st.session_state.current_waveform = self.generate_waveform(frequencies, amplitudes, offsets, durations, sr=self.sample_rate, silence_duration=silence_duration, wavetypes=wave_types)
-            st.button('Save', on_click=self.save_waveform(st.session_state.current_waveform, self.sample_rate, 'waveform_data'))
+        edited_df = st.experimental_data_editor(df, key="my_df", num_rows='dynamic',width=1000)
         
+        # Create two columns for the sliders
+        col1, col2 = st.columns(2)
+        with col1:
+            self.sample_rate = st.slider('Sample Rate', 1, 100, 40, 1)
+        with col2:
+            silence_duration = st.slider('Gap Duration(sets wave to zero)', 0.0, 2.0, 1.0, 0.05)
+        
+        total_duration = sum(edited_df['Duration'].values) + len(edited_df['Duration'].values) * silence_duration
+        st.text(f"Duration: {total_duration} seconds")
+        total_samples = int(self.sample_rate * total_duration)
+        st.text(f'Total Samples: {total_samples}')
+        
+        generate_col, save_col = st.columns(2)
+        with generate_col:
+            if st.button('Generate'):
+                frequencies = edited_df['Frequency'].values
+                amplitudes = edited_df['Amplitude'].values
+                offsets = edited_df['Offset'].values
+                durations = edited_df['Duration'].values
+                wave_types = edited_df['Wavetype'].values
+                st.session_state.current_waveform = self.generate_waveform(frequencies, amplitudes, offsets, durations, sr=self.sample_rate, silence_duration=silence_duration, wavetypes=wave_types)
+                st.session_state.wave_form_saved = False
+            
         if st.session_state.current_waveform is not None:
-            self.plot_waveform(st.session_state.current_waveform)
+                
+            with save_col:
+                    if st.session_state.wave_form_saved == False:
+                        st.button('Save', on_click=self.save_waveform(st.session_state.current_waveform, self.sample_rate, 'waveform_data'))
+                        st.session_state.wave_form_saved = True
+                    elif st.session_state.wave_form_saved == True:
+                        st.success('Waveform Saved')
+            self.plot_waveform(st.session_state.current_waveform, self.sample_rate)
 
 
     def generate_waveform(self,frequencies, amplitudes, offsets, durations, sr, silence_duration, wavetypes):
@@ -56,6 +78,8 @@ class WavefromGenerator:
             # check the wavetype and generate appropriate waveform
             if wt == 'Sine':
                 wave = amp * np.sin(2 * np.pi * freq * t) + offset
+            elif wt == 'Cosine':
+                wave = amp * np.cos(2 * np.pi * freq * t) + offset
             elif wt == 'Square':
                 wave = amp * np.sign(np.sin(2 * np.pi * freq * t)) + offset
             elif wt == 'Triangle':
@@ -71,17 +95,27 @@ class WavefromGenerator:
             waveform[start:start+silence_samples] += 0
             start += silence_samples
         # Normalize the waveform
-        waveform /= max(abs(waveform))
+        # waveform /= max(abs(waveform))
         return waveform
 
-    def plot_waveform(self,waveform):
+    def plot_waveform(self, waveform, sample_rate):
         fig, ax = plt.subplots()
-        ax.plot(waveform)
-        ax.set_xlabel('Time (samples)')
+        time_values = np.arange(len(waveform)) / sample_rate
+        ax.plot(time_values, waveform)
+        ax.set_xlabel('Time (seconds)')
         ax.set_ylabel('Amplitude')
         ax.set_title('Generated Waveform')
         # Remove top and right borders
         ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        # Set y-axis tick labels to show time in seconds
+        ax.set_yticks(np.arange(0, max(waveform), step=max(waveform)/5))
+        # set the aspect ratio to fit the window
+        # set the height to width ratio to 1:2
+        fig.set_figheight(7)
+        fig.set_figwidth(20)
+        fig.set_dpi(500)
+        plt.show()
 
         return st.pyplot(fig)
 
@@ -97,6 +131,7 @@ class WavefromGenerator:
             writer.writerow(['Timestamp', 'Amplitude'])
             for i in range(len(waveform)):
                 writer.writerow([timestamps[i], waveform[i]])
+        print(type(waveform))
 
         
 if __name__ == "__main__":
