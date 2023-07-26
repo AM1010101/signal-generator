@@ -34,7 +34,7 @@ class WavefromGenerator:
         # Create two columns for the sliders
         col1, col2, col3 = st.columns(3)
         with col1:
-            self.sample_rate = st.slider('Sample Rate', 1, 100, 40, 1)
+            self.sample_rate = st.slider('Sample Rate', 1, 1000, 40, 1)
         with col2:
             silence_duration = st.slider('Gap Duration(sets wave to zero)', 0.0, 2.0, 1.0, 0.05)
         with col3:  
@@ -54,6 +54,7 @@ class WavefromGenerator:
             wave_types = edited_df['Wavetype'].values
             st.session_state.current_waveform = self.generate_waveform(frequencies, amplitudes, offsets, durations, sr=self.sample_rate, silence_duration=silence_duration, wavetypes=wave_types)
             st.session_state.wave_form_saved = False
+
             
         if st.session_state.current_waveform is not None:
             if st.session_state.wave_form_saved == False:
@@ -64,8 +65,16 @@ class WavefromGenerator:
                 st.success('Waveform Saved')
             self.plot_waveform(st.session_state.current_waveform, self.sample_rate)
 
+    def download_button(self):
+        """
+        Call this when the download button is clicked to laod and download the file
+        """
+        with open('waveform_data.csv') as f:
+            st.download_button('Download CSV', f, 'waveform_data.csv', 'text/csv')
+        
 
     def generate_waveform(self,frequencies, amplitudes, offsets, durations, sr, silence_duration, wavetypes):
+        print(sr)
         # Calculate the total number of samples for the entire waveform
         total_samples = int(sr * (sum(durations) + len(durations) * silence_duration))
         # Create an empty array to store the waveform
@@ -94,11 +103,10 @@ class WavefromGenerator:
             silence_samples = int(sr * silence_duration)
             waveform[start:start+silence_samples] += 0
             start += silence_samples
+
         # Smooth the waveform
         if self.smoothing > 0:
             waveform = np.convolve(waveform, np.ones(int(sr * self.smoothing)) / (sr * self.smoothing), mode='same')
-        # Normalize the waveform
-        # waveform /= max(abs(waveform))
 
         return waveform
 
@@ -109,11 +117,14 @@ class WavefromGenerator:
         ax.set_xlabel('Time (seconds)')
         ax.set_ylabel('Amplitude')
         ax.set_title('Generated Waveform')
+
         # Remove top and right borders
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
+
         # Set y-axis tick labels to show time in seconds
         ax.set_yticks(np.arange(0, max(waveform), step=max(waveform)/5))
+
         # set the aspect ratio to fit the window
         # set the height to width ratio to 1:2
         fig.set_figheight(7)
@@ -129,13 +140,15 @@ class WavefromGenerator:
         time_interval = 1 / sample_rate
         # Generate timestamps based on the time interval
         timestamps = [i * time_interval for i in range(len(waveform))]
+        index = np.arange(0, len(waveform), 1)
         # Create a CSV file and write the data to it
         with open(f'{filename}.csv', mode='w', newline='') as file:
             writer = csv.writer(file)
-            writer.writerow(['Timestamp', 'Amplitude'])
+            writer.writerow(['Index','Timestamp', 'Amplitude'])
             for i in range(len(waveform)):
-                writer.writerow([timestamps[i], waveform[i]])
-        print(type(waveform))
+                writer.writerow([index[i], timestamps[i], waveform[i]])
+        # print(type(waveform))
+        self.download_button()
 
         
 if __name__ == "__main__":
